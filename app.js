@@ -1,25 +1,26 @@
 const fs = require("fs/promises");
 
 (async () => {
-  // commands
   const CREATE_FILE = "create a file";
   const DELETE_FILE = "delete the file";
   const RENAME_FILE = "rename the file";
   const ADD_TO_FILE = "add to the file";
 
   const createFile = async (path) => {
+    let existingFileHandle;
     try {
-      // we want to check whether or not we have that file
-      const existingFileHandle = await fs.open(path, "r");
-      existingFileHandle.close();
-
-      // We already have that file
-      return console.log(`File ${path} already exists`);
+      existingFileHandle = await fs.open(path, "r");
+      console.log(`File ${path} already exists`);
     } catch (error) {
-      // We dont have the file, now we should create it
-      const newFileHandle = await fs.open(path, "w");
-      console.log("A new file was successfully created.");
-      newFileHandle.close();
+      if (error.code === "ENOENT") {
+        const newFileHandle = await fs.open(path, "w");
+        console.log("A new file was successfully created.");
+        await newFileHandle.close();
+      } else {
+        console.error(`Error while checking file: ${error}`);
+      }
+    } finally {
+      if (existingFileHandle) await existingFileHandle.close();
     }
   };
 
@@ -32,93 +33,88 @@ const fs = require("fs/promises");
       if (error.code === "ENOENT") {
         console.log("No file at this path to remove.");
       } else {
-        console.log(`Error while deleting the file: ${error}`);
+        console.error(`Error while deleting the file: ${error}`);
       }
     }
   };
 
   const renameFile = async (oldPath, newPath) => {
-    console.log(`Renaming ${oldPath} to ${newPath}`);
     try {
+      console.log(`Renaming ${oldPath} to ${newPath}`);
       await fs.rename(oldPath, newPath);
-      console.log("successfully renamed the file");
+      console.log("Successfully renamed the file");
     } catch (error) {
       if (error.code === "ENOENT" && error.syscall === "rename") {
-        console.log("The file does not exist. ");
+        console.log("The file does not exist.");
       } else {
-        console.log("Error Occured: ", error);
+        console.error("Error Occurred: ", error);
       }
     }
   };
 
   let addedContent;
   const addToFile = async (path, content) => {
-    if (addedContent === content) return;
-    console.log(`Adding to ${path}`);
-    console.log(`Content: ${content}`);
-
+    let fileHandler;
     try {
-      const fileHandler = await fs.open(path, "a");
-      fileHandler.write(content);
+      console.log(`Adding to ${path}`);
+      fileHandler = await fs.open(path, "a");
+      if (addedContent === content) return;
+
+      await fileHandler.write(content);
       addedContent = content;
       console.log("The content was added successfully!");
-      fileHandler.close();
     } catch (error) {
-      console.log(error);
+      console.error(error);
+    } finally {
+      if (fileHandler) await fileHandler.close();
     }
   };
 
   const commandFileHandler = await fs.open("./command.txt", "r");
 
   commandFileHandler.on("change", async () => {
-    // get the size of the file
-    const fileSize = (await commandFileHandler.stat()).size;
-    // allocate a buffer with the size of the file
-    const buffer = Buffer.alloc(fileSize);
-    // the location of the buffer to start filling our buffer`
-    const offset = 0;
-    // the length of the buffer to read
-    const length = buffer.byteLength;
-    // the position of the buffer to start reading
-    const position = 0;
+    try {
+      const fileSize = (await commandFileHandler.stat()).size;
+      const buffer = Buffer.alloc(fileSize);
+      const offset = 0;
+      const length = buffer.byteLength;
+      const position = 0;
 
-    // we always want to read the entire file(from start to end)
-    await commandFileHandler.read(buffer, offset, length, position);
+      await commandFileHandler.read(buffer, offset, length, position);
 
-    const command = buffer.toString("utf-8");
+      const command = buffer.toString("utf-8");
 
-    // create a file:
-    // create a file <path>
-    if (command.includes(CREATE_FILE)) {
-      const filePath = command
-        .substring(command.indexOf(CREATE_FILE) + CREATE_FILE.length)
-        .trim();
-      await createFile(filePath);
-    }
+      if (command.includes(CREATE_FILE)) {
+        const filePath = command
+          .substring(command.indexOf(CREATE_FILE) + CREATE_FILE.length)
+          .trim();
+        await createFile(filePath);
+      }
 
-    // delete a file
-    // delete the file <path>
-    if (command.includes(DELETE_FILE)) {
-      const filePath = command.substring(DELETE_FILE.length + 1);
-      deleteFile(filePath);
-    }
+      if (command.includes(DELETE_FILE)) {
+        const filePath = command.substring(DELETE_FILE.length + 1).trim();
+        await deleteFile(filePath);
+      }
 
-    // rename file:
-    // rename the file <path> to <new-path>
-    if (command.includes(RENAME_FILE)) {
-      const _idx = command.indexOf(" to ");
-      const oldFilePath = command.substring(RENAME_FILE.length + 1, _idx);
-      const newFilePath = command.substring(_idx + " to ".length);
-      renameFile(oldFilePath, newFilePath);
-    }
+      if (command.includes(RENAME_FILE)) {
+        const _idx = command.indexOf(" to ");
+        const oldFilePath = command
+          .substring(RENAME_FILE.length + 1, _idx)
+          .trim();
+        const newFilePath = command.substring(_idx + " to ".length).trim();
+        await renameFile(oldFilePath, newFilePath);
+      }
 
-    // add to file:
-    // add to the file <path> this content: <content>
-    if (command.includes(ADD_TO_FILE)) {
-      const _idx = command.indexOf(" this content: ");
-      const filePath = command.substring(ADD_TO_FILE.length + 1, _idx);
-      const content = command.substring(_idx + " this content: ".length);
-      addToFile(filePath, content);
+      if (command.includes(ADD_TO_FILE)) {
+        const _idx = command.indexOf(" this content: ");
+        const filePath = command.substring(ADD_TO_FILE.length + 1, _idx).trim();
+        const content = command
+          .substring(_idx + " this content: ".length)
+          .trim();
+        await addToFile(filePath, content);
+      }
+    } catch (error) {
+      console.error("Error processing file change:", error);
     }
   });
 
