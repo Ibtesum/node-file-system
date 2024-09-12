@@ -1,1 +1,1 @@
-create a file text.txt
+add to the file test.txt this content: hi!
